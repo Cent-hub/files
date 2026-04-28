@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Attendance Management — Sign Up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="auth-page" class="page active">
+  <div class="auth-card">
+
+    <div class="auth-logo">
+      <div class="logo-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <span>Attendance Management</span>
+    </div>
+
+    <div class="auth-tabs">
+      <a class="auth-tab" href="index.html">Sign In</a>
+      <button class="auth-tab active">Register</button>
+    </div>
+
+    <div id="register-form" class="auth-form active">
+      <h2 class="form-title">Create account</h2>
+      <p class="form-sub">Attend as a teacher or student.</p>
+
+      <div id="reg-alert" class="alert alert-error">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span id="reg-alert-msg"></span>
+      </div>
+
+      <div class="role-toggle">
+        <button class="role-btn active" id="role-student" onclick="setRole('student')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          Student
+        </button>
+        <button class="role-btn" id="role-teacher" onclick="setRole('teacher')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Teacher
+        </button>
+      </div>
+      <input type="hidden" id="reg-role" value="student"/>
+
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="reg-name"/>
+      </div>
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="reg-email"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="reg-pass"/>
+      </div>
+      <div class="field-row" id="student-fields">
+        <div class="field">
+          <label>Student ID</label>
+          <input type="text" id="reg-sid"/>
+        </div>
+        <div class="field">
+          <label>Section</label>
+          <input type="text" id="reg-section"/>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" onclick="doRegister()">
+        <span id="reg-btn-text">Create Account</span>
+        <div class="spinner" id="reg-spinner"></div>
+      </button>
+    </div>
+
+  </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

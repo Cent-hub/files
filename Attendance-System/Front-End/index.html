@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Attendance Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AUTH PAGE
+════════════════════════════════════════════════════════════════════ -->
+<div id="auth-page" class="page active">
+  <div class="auth-card">
+
+    <div class="auth-logo">
+      <div class="logo-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <span>Attendance Management</span>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login')">Sign In</button>
+      <a class="auth-tab" href="register.html">Register</a>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="login-form" class="auth-form active">
+      <h2 class="form-title">Welcome back</h2>
+      <p class="form-sub">Sign in to your account to continue.</p>
+
+      <div id="login-alert" class="alert alert-error">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span id="login-alert-msg"></span>
+      </div>
+
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="login-email" placeholder="you@school.edu"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+
+      <button class="btn btn-primary btn-full" onclick="doLogin()">
+        <span id="login-btn-text">Sign In</span>
+        <div class="spinner" id="login-spinner"></div>
+      </button>
+    </div>
+
+  </div>
+</div><!-- /#auth-page -->
+
+
+
+
+</body>
+<script src="script.js"></script>
+</html>
