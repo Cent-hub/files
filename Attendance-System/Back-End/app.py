@@ -269,6 +269,31 @@ def list_sessions():
     return jsonify(rows)
 
 
+@app.get("/api/sessions/<int:sid>")
+@auth_required(roles=["teacher"])
+def get_session(sid):
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, teacher_id, subject, section, session_date, start_time, end_time, "
+            "code, max_students, is_open, created_at FROM sessions WHERE id = %s", (sid,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        if row["teacher_id"] != int(request.user["sub"]):
+            conn.close()
+            return jsonify({"error": "Forbidden"}), 403
+    conn.close()
+    # stringify dates / times
+    row["session_date"] = str(row["session_date"])
+    row["start_time"]   = str(row["start_time"])
+    row["end_time"]     = str(row["end_time"])
+    row["created_at"]   = str(row["created_at"])
+    return jsonify(row)
+
+
 @app.patch("/api/sessions/<int:sid>/toggle")
 @auth_required(roles=["teacher"])
 def toggle_session(sid):
@@ -288,6 +313,47 @@ def toggle_session(sid):
         cur.execute("UPDATE sessions SET is_open = %s WHERE id = %s", (new_state, sid))
     conn.close()
     return jsonify({"is_open": bool(new_state)})
+
+
+@app.patch("/api/sessions/<int:sid>/max")
+@auth_required(roles=["teacher"])
+def update_session(sid):
+    data = request.get_json()
+    updates = {}
+    if "max_students" in data:
+        max_students = data["max_students"]
+        if max_students is not None and (not isinstance(max_students, int) or max_students < 1):
+            return jsonify({"error": "Invalid max_students"}), 400
+        updates["max_students"] = max_students
+    if "start_time" in data:
+        start_time = data["start_time"]
+        if not start_time:
+            return jsonify({"error": "Invalid start_time"}), 400
+        updates["start_time"] = start_time
+    if "end_time" in data:
+        end_time = data["end_time"]
+        if not end_time:
+            return jsonify({"error": "Invalid end_time"}), 400
+        updates["end_time"] = end_time
+    if not updates:
+        return jsonify({"error": "No fields to update"}), 400
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT teacher_id FROM sessions WHERE id = %s", (sid,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        if row["teacher_id"] != int(request.user["sub"]):
+            conn.close()
+            return jsonify({"error": "Forbidden"}), 403
+        set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+        values = list(updates.values()) + [sid]
+        cur.execute(f"UPDATE sessions SET {set_clause} WHERE id = %s", values)
+    conn.close()
+    return jsonify(updates)
 
 
 @app.get("/api/sessions/<int:sid>/attendance")

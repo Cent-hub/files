@@ -20,6 +20,7 @@
       </div>
       <div class="nav-right">
         <span class="nav-user" id="nav-name">Hello, Professor</span>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle" onclick="toggleTheme()">🌙</button>
         <button class="btn btn-ghost btn-sm" onclick="logout()">Sign Out</button>
       </div>
     </nav>
@@ -39,6 +40,16 @@
         <button onclick="closeModal('attend-modal')">×</button>
       </div>
       <div class="modal-body" id="attend-modal-body"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="edit-session-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Edit Session</h2>
+        <button onclick="closeModal('edit-session-modal')">×</button>
+      </div>
+      <div class="modal-body" id="edit-session-body"></div>
     </div>
   </div>
 

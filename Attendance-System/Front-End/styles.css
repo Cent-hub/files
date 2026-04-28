@@ -22,6 +22,24 @@
   --mono:     'DM Mono', monospace;
 }
 
+.dark {
+  --bg:       #242528;
+  --surface:  #2f3238;
+  --border:   #41454f;
+  --text:     #f3f4f6;
+  --muted:    #c0c4cc;
+  --accent:   #60a5fa;
+  --accent-h: #3b82f6;
+  --green:    #34d399;
+  --green-bg: #133d2c;
+  --amber:    #fbbf24;
+  --amber-bg: #63471a;
+  --red:      #f87171;
+  --red-bg:   #7f1d1d;
+  --shadow:   0 1px 3px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.14);
+  --shadow-lg:0 4px 6px rgba(0,0,0,.24), 0 10px 30px rgba(0,0,0,.2);
+}
+
 body {
   font-family: var(--font);
   background: var(--bg);

@@ -332,6 +332,7 @@ async function loadSessions() {
               <td>
                 <div style="display:flex;gap:6px">
                   <button class="btn btn-ghost btn-sm" onclick="viewAttendance(${r.id},'${r.subject}')">View</button>
+                  <button class="btn btn-ghost btn-sm" onclick="editSessionMax(${r.id})">Edit</button>
                   <button class="btn btn-sm ${r.is_open?'btn-danger':'btn-ghost'}"
                     onclick="toggleSession(${r.id})">
                     ${r.is_open?'Close':'Open'}
@@ -408,6 +409,70 @@ async function toggleSession(id) {
   } catch(e) { alert(e.message); }
 }
 
+async function editSessionMax(id) {
+  try {
+    const data = await api('GET', `/sessions/${id}`);
+    const s = data;
+    $('edit-session-body').innerHTML = `
+      <div id="edit-alert" class="alert alert-error"><span id="edit-msg"></span></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Start Time</label>
+          <input type="time" id="edit-start" value="${s.start_time.slice(0,5)}"/>
+        </div>
+        <div class="field">
+          <label>End Time</label>
+          <input type="time" id="edit-end" value="${s.end_time.slice(0,5)}"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Max Students (optional)</label>
+        <input type="number" id="edit-max" placeholder="Leave empty for unlimited" min="1" value="${s.max_students || ''}"/>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-ghost" onclick="closeModal('edit-session-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSessionEdit(${id})">
+          <span id="edit-btn-text">Save Changes</span>
+          <div class="spinner" id="edit-spinner"></div>
+        </button>
+      </div>`;
+    openModal('edit-session-modal');
+  } catch(e) {
+    alert(e.message);
+  }
+}
+
+async function saveSessionEdit(id) {
+  hideAlert('edit-alert');
+  const start_time = $('edit-start').value;
+  const end_time = $('edit-end').value;
+  const max = $('edit-max').value.trim();
+  const max_students = max ? +max : null;
+  if (!start_time || !end_time) {
+    showAlert('edit-alert', 'Please fill in start and end times.');
+    return;
+  }
+  if (max_students !== null && (isNaN(max_students) || max_students < 1)) {
+    showAlert('edit-alert', 'Please enter a valid max students number.');
+    return;
+  }
+
+  $('edit-spinner').classList.add('show');
+  $('edit-btn-text').textContent = 'Saving…';
+  try {
+    await api('PATCH', `/sessions/${id}/max`, { start_time, end_time, max_students });
+    closeModal('edit-session-modal');
+    await loadSessions();
+    // Also reload records if open
+    if ($('records-content')) await renderTeacherRecords($('panel-t-records'));
+  } catch(e) {
+    showAlert('edit-alert', e.message);
+  } finally {
+    $('edit-spinner').classList.remove('show');
+    $('edit-btn-text').textContent = 'Save Changes';
+  }
+}
+
 async function viewAttendance(id, subject) {
   $('attend-modal-title').textContent = subject;
   $('attend-modal-body').innerHTML = '<p style="color:var(--muted);padding:8px 0">Loading…</p>';
@@ -435,6 +500,9 @@ async function viewAttendance(id, subject) {
         : `<div class="stat-grid" style="margin-bottom:20px">
             <div class="stat-card"><div class="stat-label">Total Confirmed</div><div class="stat-value">${records.length}</div></div>
           </div>
+          <div style="margin-bottom:16px">
+            <input type="text" id="attendance-search" placeholder="Search students by name or ID..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;"/>
+          </div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Name</th><th>Student ID</th><th>Section</th><th>Time</th><th>Status</th></tr></thead>
@@ -455,6 +523,26 @@ async function viewAttendance(id, subject) {
           </div>`}`;
   } catch(e) {
     $('attend-modal-body').innerHTML = `<div class="alert alert-error show">${e.message}</div>`;
+  }
+
+  // Add search functionality
+  const searchInput = $('attendance-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      const query = this.value.toLowerCase();
+      const tbody = this.closest('.table-wrap').querySelector('tbody');
+      if (!tbody) return;
+      const rows = tbody.querySelectorAll('tr');
+      rows.forEach(row => {
+        const name = row.cells[0].textContent.toLowerCase();
+        const sid = row.cells[1].textContent.toLowerCase();
+        if (name.includes(query) || sid.includes(query)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    });
   }
 }
 
@@ -491,7 +579,7 @@ async function renderTeacherRecords(el) {
                 <td style="font-family:var(--mono);letter-spacing:2px;color:var(--accent)">${r.code}</td>
                 <td>${r.max_students || '—'}</td>
                 <td>${r.is_open?`<span class="badge badge-green">Open</span>`:`<span class="badge badge-muted">Closed</span>`}</td>
-                <td><button class="btn btn-ghost btn-sm" onclick="viewAttendance(${r.id},'${r.subject}')">View</button></td>
+                <td><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="viewAttendance(${r.id},'${r.subject}')">View</button><button class="btn btn-ghost btn-sm" onclick="editSessionMax(${r.id})">Edit</button></div></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -655,6 +743,30 @@ function listIcon() {
 function checkIcon() {
   return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
 }
+
+/* ═══════════════════════════════════════════════════
+   THEME TOGGLE
+═══════════════════════════════════════════════════ */
+function toggleTheme() {
+  const body = document.body;
+  const isDark = body.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  updateThemeIcon();
+}
+
+function updateThemeIcon() {
+  const toggle = $('theme-toggle');
+  if (toggle) {
+    toggle.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+  }
+}
+
+// Apply saved theme on load
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'dark') {
+  document.body.classList.add('dark');
+}
+updateThemeIcon();
 
 /* ═══════════════════════════════════════════════════
    INIT — auto-login if token exists
