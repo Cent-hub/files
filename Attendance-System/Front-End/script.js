@@ -4,6 +4,8 @@
 const API = 'http://127.0.0.1:5000/api';
 let token = localStorage.getItem('att_token');
 let user  = JSON.parse(localStorage.getItem('att_user') || 'null');
+let pendingDeleteSessionId = null;
+let profilePictureData = null;
 
 /* ═══════════════════════════════════════════════════
    UTILS
@@ -87,6 +89,9 @@ function setRole(role) {
   $('role-student').classList.toggle('active', role==='student');
   $('role-teacher').classList.toggle('active', role==='teacher');
   $('student-fields').style.display = role==='student' ? 'grid' : 'none';
+  $('reg-identifier-label').textContent = role==='student' ? 'Student ID' : 'Email Address';
+  $('reg-email').type = role==='student' ? 'text' : 'email';
+  $('reg-email').placeholder = role==='student' ? '' : '';
 }
 
 /* ═══════════════════════════════════════════════════
@@ -128,8 +133,8 @@ async function doRegister() {
     email:      $('reg-email').value.trim(),
     password:   $('reg-pass').value,
     role:       $('reg-role').value,
-    student_id: $('reg-sid').value.trim(),
     section:    $('reg-section').value.trim(),
+    student_type: $('reg-student-type').value,
   };
   if (!payload.full_name||!payload.email||!payload.password)
     return showAlert('reg-alert','Please fill required fields.');
@@ -197,6 +202,7 @@ function buildSidebar() {
         { id:'t-records', icon: listIcon(),  label: 'Records'        },
       ]
     : [
+        { id:'profile',   icon: plusIcon(),  label: 'Profile'    },
         { id:'confirm',   icon: checkIcon(), label: 'Confirm'    },
         { id:'s-history', icon: listIcon(),  label: 'My History' },
       ];
@@ -224,6 +230,7 @@ function navigateTo(panel) {
     case 'create':    renderTeacherCreate(div);  break;
     case 'sessions':  renderTeacherSessions(div); break;
     case 't-records': renderTeacherRecords(div);  break;
+    case 'profile':   renderStudentProfile(div);  break;
     case 'confirm':   renderStudentConfirm(div);  break;
     case 's-history': renderStudentHistory(div);  break;
   }
@@ -298,6 +305,179 @@ async function renderTeacherSessions(el) {
   await loadSessions();
 }
 
+function getStudentProfile() {
+  const key = user ? `att_student_profile_${user.id}` : 'att_student_profile';
+  const stored = localStorage.getItem(key);
+  let profile = stored ? JSON.parse(stored) : {};
+  if (user) {
+    if (!profile.student_id && user.student_id) profile.student_id = user.student_id;
+    if (!profile.full_name && user.full_name) profile.full_name = user.full_name;
+    if (!profile.student_type && user.student_type) profile.student_type = user.student_type;
+    if (!profile.gender && user.gender) profile.gender = user.gender;
+    if (!profile.department && user.department) profile.department = user.department;
+    if (!profile.profile_picture && user.profile_picture) profile.profile_picture = user.profile_picture;
+  }
+  return profile;
+}
+
+function saveStudentProfileData(profile) {
+  const key = user ? `att_student_profile_${user.id}` : 'att_student_profile';
+  localStorage.setItem(key, JSON.stringify(profile));
+}
+
+function previewProfilePicture(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const imageData = reader.result;
+    profilePictureData = imageData;
+    const preview = $('profile-pic-preview');
+    if (preview) preview.src = imageData;
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderStudentProfile(el) {
+  const profile = getStudentProfile();
+  el.innerHTML = `
+    <div class="panel-header">
+      <div><h1>Student Profile</h1><p>Update your profile details and picture.</p></div>
+    </div>
+    <div class="card">
+      <div id="profile-alert" class="alert alert-error"><span id="profile-msg"></span></div>
+      <div class="field" style="text-align:center;">
+        <label>Profile Picture</label>
+        <img id="profile-pic-preview" src="${profile.profile_picture || 'https://via.placeholder.com/120?text=Photo'}" alt="Profile preview" style="width:120px;height:120px;border-radius:999px;object-fit:cover;display:block;margin:0 auto 12px;"/>
+        <input type="file" id="profile-pic-input" accept="image/*" onchange="previewProfilePicture(this)" style="margin:0 auto;display:block;"/>
+      </div>
+      <div class="field">
+        <label>Student ID</label>
+        <input type="text" id="profile-sid" value="${profile.student_id || ''}"/>
+      </div>
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="profile-fullname" value="${profile.full_name || ''}"/>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Student Type</label>
+          <select id="profile-type">
+            <option value="regular" ${profile.student_type==='regular'?'selected':''}>Regular</option>
+            <option value="irregular" ${profile.student_type==='irregular'?'selected':''}>Irregular</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Gender</label>
+          <select id="profile-gender">
+            <option value="">Select gender</option>
+            <option value="Male" ${profile.gender==='Male'?'selected':''}>Male</option>
+            <option value="Female" ${profile.gender==='Female'?'selected':''}>Female</option>
+            <option value="Other" ${profile.gender==='Other'?'selected':''}>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Department</label>
+        <input type="text" id="profile-department" value="${profile.department || ''}"/>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-primary" onclick="saveStudentProfile()">
+          <span id="profile-save-text">Save Profile</span>
+          <div class="spinner" id="profile-save-spinner"></div>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function saveStudentProfile() {
+  console.log("saveStudentProfile called");
+  const profile = getStudentProfile();
+  const payload = {
+    student_id: $('profile-sid').value.trim(),
+    full_name: $('profile-fullname').value.trim(),
+    student_type: $('profile-type').value,
+    gender: $('profile-gender').value,
+    department: $('profile-department').value.trim(),
+  };
+  if (profilePictureData) payload.profile_picture = profilePictureData;
+
+  if (!payload.student_id || !payload.full_name) {
+    showAlert('profile-alert','Student ID and full name are required.');
+    return;
+  }
+
+  const spinner = $('profile-save-spinner');
+  const btnText = $('profile-save-text');
+  if (spinner) spinner.classList.add('show');
+  if (btnText) btnText.textContent = 'Saving…';
+
+  try {
+    const data = await api('PATCH', '/users/profile', payload);
+    const updatedUser = data.user || payload;
+    if (user) {
+      user.full_name = updatedUser.full_name;
+      user.student_id = updatedUser.student_id;
+      user.student_type = updatedUser.student_type;
+      user.gender = updatedUser.gender;
+      user.department = updatedUser.department;
+      user.profile_picture = updatedUser.profile_picture || payload.profile_picture || profile.profile_picture;
+      localStorage.setItem('att_user', JSON.stringify(user));
+    }
+    saveStudentProfileData(payload);
+    showAlert('profile-alert','Profile saved successfully!','success');
+    setTimeout(() => hideAlert('profile-alert'), 5000);
+    profilePictureData = null;
+  } catch(e) {
+    showAlert('profile-alert', e.message);
+  } finally {
+    if (spinner) spinner.classList.remove('show');
+    if (btnText) btnText.textContent = 'Save Profile';
+  }
+}
+
+async function showStudentProfile(uid) {
+  $('attend-modal-title').textContent = 'Student Profile';
+  $('attend-modal-body').innerHTML = '<p style="color:var(--muted);padding:8px 0">Loading profile…</p>';
+  openModal('attend-modal');
+  try {
+    const data = await api('GET', `/users/${uid}`);
+    const student = data.user;
+    $('attend-modal-body').innerHTML = `
+      <div style="text-align:center;">
+        <img src="${student.profile_picture || 'https://via.placeholder.com/120?text=Photo'}" alt="Profile photo" style="width:120px;height:120px;border-radius:999px;object-fit:cover;margin-bottom:16px;"/>
+      </div>
+      <div class="field">
+        <label>Student ID</label>
+        <div>${student.student_id || '—'}</div>
+      </div>
+      <div class="field">
+        <label>Full Name</label>
+        <div>${student.full_name || '—'}</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Student Type</label>
+          <div>${student.student_type || '—'}</div>
+        </div>
+        <div class="field">
+          <label>Gender</label>
+          <div>${student.gender || '—'}</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Department</label>
+        <div>${student.department || '—'}</div>
+      </div>
+      <div class="field">
+        <label>Section</label>
+        <div>${student.section || '—'}</div>
+      </div>`;
+  } catch(e) {
+    $('attend-modal-body').innerHTML = `<div class="alert alert-error show">${e.message}</div>`;
+  }
+}
+
 async function loadSessions() {
   try {
     const rows = await api('GET','/sessions');
@@ -337,6 +517,7 @@ async function loadSessions() {
                     onclick="toggleSession(${r.id})">
                     ${r.is_open?'Close':'Open'}
                   </button>
+                  <button class="btn btn-danger btn-sm" onclick="confirmDeleteSession(${r.id})">Delete</button>
                 </div>
               </td>
             </tr>`).join('')}
@@ -407,6 +588,31 @@ async function toggleSession(id) {
     await api('PATCH', `/sessions/${id}/toggle`);
     await loadSessions();
   } catch(e) { alert(e.message); }
+}
+
+function confirmDeleteSession(id) {
+  pendingDeleteSessionId = id;
+  $('attend-modal-title').textContent = 'Confirm Deletion';
+  $('attend-modal-body').innerHTML = `
+    <p>Do you want to delete this session and all related attendance records?</p>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal('attend-modal'); pendingDeleteSessionId = null;">Cancel</button>
+      <button class="btn btn-danger" onclick="deleteSession()">Confirm</button>
+    </div>`;
+  openModal('attend-modal');
+}
+
+async function deleteSession() {
+  if (!pendingDeleteSessionId) return;
+  const id = pendingDeleteSessionId;
+  pendingDeleteSessionId = null;
+  closeModal('attend-modal');
+  try {
+    await api('DELETE', `/sessions/${id}`);
+    await loadSessions();
+  } catch(e) {
+    alert(e.message);
+  }
 }
 
 async function editSessionMax(id) {
@@ -481,6 +687,8 @@ async function viewAttendance(id, subject) {
     const data = await api('GET', `/sessions/${id}/attendance`);
     const s = data.session;
     const records = data.records;
+    window.teacherAttendanceRecords = records;
+    window.teacherAttendanceFilter = 'all';
     $('attend-modal-body').innerHTML = `
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
         <span class="badge badge-blue">${s.section}</span>
@@ -499,23 +707,40 @@ async function viewAttendance(id, subject) {
         ? `<div class="empty" style="padding:24px"><div class="empty-icon">🙋</div><p>No students have confirmed attendance yet.</p></div>`
         : `<div class="stat-grid" style="margin-bottom:20px">
             <div class="stat-card"><div class="stat-label">Total Confirmed</div><div class="stat-value">${records.length}</div></div>
+            <div class="stat-card"><div class="stat-label">Present</div><div class="stat-value" style="color:var(--green)">${records.filter(r=>r.status==='present').length}</div></div>
+            <div class="stat-card"><div class="stat-label">Late</div><div class="stat-value" style="color:var(--amber)">${records.filter(r=>r.status==='late').length}</div></div>
+            <div class="stat-card"><div class="stat-label">Absent</div><div class="stat-value" style="color:var(--red)">${records.filter(r=>r.status==='absent').length}</div></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+            <button class="btn btn-ghost btn-sm active" id="status-filter-all" onclick="filterAttendanceStatus('all')">All</button>
+            <button class="btn btn-ghost btn-sm" id="status-filter-present" onclick="filterAttendanceStatus('present')">Present</button>
+            <button class="btn btn-ghost btn-sm" id="status-filter-late" onclick="filterAttendanceStatus('late')">Late</button>
+            <button class="btn btn-ghost btn-sm" id="status-filter-absent" onclick="filterAttendanceStatus('absent')">Absent</button>
           </div>
           <div style="margin-bottom:16px">
             <input type="text" id="attendance-search" placeholder="Search students by name or ID..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;"/>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Student ID</th><th>Section</th><th>Time</th><th>Status</th></tr></thead>
-              <tbody>
+              <thead><tr><th>Name</th><th>Student ID</th><th>Section</th><th>Gender</th><th>Department</th><th>Time</th><th>Status</th><th></th></tr></thead>
+              <tbody id="attendance-body">
                 ${records.map(r=>`
                 <tr>
                   <td><strong>${r.full_name}</strong></td>
                   <td style="font-family:var(--mono);font-size:13px">${r.sid||'—'}</td>
                   <td>${r.section||'—'}</td>
+                  <td>${r.gender||'—'}</td>
+                  <td>${r.department||'—'}</td>
                   <td style="font-size:13px;white-space:nowrap">${fmtDateTime(r.confirmed_at)}</td>
-                  <td>${r.status==='present'
+                  <td>
+                    ${r.status==='present'
                     ? `<span class="badge badge-green">Present</span>`
-                    : `<span class="badge badge-amber">Late</span>`}
+                    : r.status==='late'
+                    ? `<span class="badge badge-amber">Late</span>`
+                    : `<span class="badge badge-red">Absent</span>`}
+                  </td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm" onclick="showStudentProfile(${r.uid})">Profile</button>
                   </td>
                 </tr>`).join('')}
               </tbody>
@@ -546,6 +771,52 @@ async function viewAttendance(id, subject) {
   }
 }
 
+
+
+function filterAttendanceStatus(status) {
+  const records = window.teacherAttendanceRecords || [];
+  window.teacherAttendanceFilter = status;
+  updateAttendanceTable(records, status);
+}
+
+function updateAttendanceTable(records, statusFilter = 'all') {
+  const tbody = $('attendance-body');
+  if (!tbody) return;
+  const filtered = statusFilter === 'all' ? records : records.filter(r => r.status === statusFilter);
+  tbody.innerHTML = renderAttendanceRows(filtered);
+  updateAttendanceStatusButtons(statusFilter);
+}
+
+function updateAttendanceStatusButtons(activeStatus) {
+  ['all', 'present', 'late', 'absent'].forEach(key => {
+    const btn = $('status-filter-' + key);
+    if (!btn) return;
+    btn.classList.toggle('active', activeStatus === key);
+  });
+}
+
+function renderAttendanceRows(records) {
+  return records.map(r => `
+                <tr>
+                  <td><strong>${r.full_name}</strong></td>
+                  <td style="font-family:var(--mono);font-size:13px">${r.sid||'—'}</td>
+                  <td>${r.section||'—'}</td>
+                  <td>${r.gender||'—'}</td>
+                  <td>${r.department||'—'}</td>
+                  <td style="font-size:13px;white-space:nowrap">${fmtDateTime(r.confirmed_at)}</td>
+                  <td>
+                    ${r.status==='present'
+                    ? `<span class="badge badge-green">Present</span>`
+                    : r.status==='late'
+                    ? `<span class="badge badge-amber">Late</span>`
+                    : `<span class="badge badge-red">Absent</span>`}
+                  </td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm" onclick="showStudentProfile(${r.uid})">Profile</button>
+                  </td>
+                </tr>`).join('');
+}
+
 /* ═══════════════════════════════════════════════════
    TEACHER — RECORDS PANEL (all sessions summary)
 ═══════════════════════════════════════════════════ */
@@ -560,6 +831,15 @@ async function renderTeacherRecords(el) {
     const rows = await api('GET','/sessions');
     const total = rows.length;
     const open  = rows.filter(r=>r.is_open).length;
+    const counts = await Promise.all(rows.map(async r => {
+      try {
+        const data = await api('GET', `/sessions/${r.id}/attendance`);
+        return data.records.length;
+      } catch {
+        return 0;
+      }
+    }));
+
     $('records-content').innerHTML = `
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-label">Total Sessions</div><div class="stat-value">${total}</div></div>
@@ -569,9 +849,9 @@ async function renderTeacherRecords(el) {
       ${total ? `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Subject</th><th>Section</th><th>Date</th><th>Code</th><th>Max</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Subject</th><th>Section</th><th>Date</th><th>Code</th><th>Max</th><th>Status</th><th>Confirmed</th></tr></thead>
             <tbody>
-              ${rows.map(r=>`
+              ${rows.map((r, idx)=>`
               <tr>
                 <td><strong>${r.subject}</strong></td>
                 <td>${r.section}</td>
@@ -579,7 +859,7 @@ async function renderTeacherRecords(el) {
                 <td style="font-family:var(--mono);letter-spacing:2px;color:var(--accent)">${r.code}</td>
                 <td>${r.max_students || '—'}</td>
                 <td>${r.is_open?`<span class="badge badge-green">Open</span>`:`<span class="badge badge-muted">Closed</span>`}</td>
-                <td><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="viewAttendance(${r.id},'${r.subject}')">View</button><button class="btn btn-ghost btn-sm" onclick="editSessionMax(${r.id})">Edit</button></div></td>
+                <td>${counts[idx] || 0}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -640,7 +920,7 @@ async function submitAttendance() {
   try {
     const data = await api('POST','/attendance/confirm',{code});
     $('att-code').value = '';
-    const msg = `Attendance confirmed for ${data.subject}! Status: ${data.status === 'late' ? '⚠️ Late' : '✅ Present'}`;
+    const msg = `Attendance confirmed for ${data.subject}! Status: ${data.status === 'late' ? '⚠️ Late' : data.status === 'absent' ? '❌ Absent' : '✅ Present'}`;
     $('confirm-success-msg').textContent = msg;
     $('confirm-success').classList.add('show');
     loadRecentHistory();
@@ -673,7 +953,9 @@ async function loadRecentHistory() {
               <td style="font-size:13px">${fmtDateTime(r.confirmed_at)}</td>
               <td>${r.status==='present'
                 ? `<span class="badge badge-green">Present</span>`
-                : `<span class="badge badge-amber">Late</span>`}
+                : r.status==='late'
+                ? `<span class="badge badge-amber">Late</span>`
+                : `<span class="badge badge-red">Absent</span>`}
               </td>
             </tr>`).join('')}
           </tbody>
@@ -696,12 +978,14 @@ async function renderStudentHistory(el) {
     const rows = await api('GET','/attendance/my');
     const present = rows.filter(r=>r.status==='present').length;
     const late    = rows.filter(r=>r.status==='late').length;
+    const absent  = rows.filter(r=>r.status==='absent').length;
 
     $('history-content').innerHTML = `
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${rows.length}</div></div>
         <div class="stat-card"><div class="stat-label">Present</div><div class="stat-value" style="color:var(--green)">${present}</div></div>
         <div class="stat-card"><div class="stat-label">Late</div><div class="stat-value" style="color:var(--amber)">${late}</div></div>
+        <div class="stat-card"><div class="stat-label">Absent</div><div class="stat-value" style="color:var(--red)">${absent}</div></div>
       </div>
       ${rows.length ? `
         <div class="table-wrap">
@@ -717,7 +1001,9 @@ async function renderStudentHistory(el) {
                 <td style="font-size:13px;white-space:nowrap">${fmtDateTime(r.confirmed_at)}</td>
                 <td>${r.status==='present'
                   ? `<span class="badge badge-green">Present</span>`
-                  : `<span class="badge badge-amber">Late</span>`}
+                  : r.status==='late'
+                  ? `<span class="badge badge-amber">Late</span>`
+                  : `<span class="badge badge-red">Absent</span>`}
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -774,3 +1060,4 @@ updateThemeIcon();
 if (token && user && document.getElementById('app-page')) {
   launchApp();
 }
+if ($('reg-role')) setRole($('reg-role').value);

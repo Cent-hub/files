@@ -13,14 +13,18 @@ USE attendance_db;
 --  USERS  (students + teachers share table)
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    full_name   VARCHAR(120)        NOT NULL,
-    email       VARCHAR(180)        NOT NULL UNIQUE,
-    password    VARCHAR(255)        NOT NULL,   -- bcrypt hash
-    role        ENUM('student','teacher') NOT NULL DEFAULT 'student',
-    student_id  VARCHAR(30)         NULL,
-    section     VARCHAR(50)         NULL,
-    created_at  TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    full_name      VARCHAR(120)        NOT NULL,
+    email          VARCHAR(180)        NULL,
+    password       VARCHAR(255)        NOT NULL,   -- bcrypt hash
+    role           ENUM('student','teacher') NOT NULL DEFAULT 'student',
+    student_id     VARCHAR(30)         NULL UNIQUE,
+    section        VARCHAR(50)         NULL,
+    student_type   ENUM('regular','irregular') DEFAULT 'regular',
+    gender         VARCHAR(20)         NULL,
+    department     VARCHAR(100)        NULL,
+    profile_picture TEXT               NULL,
+    created_at     TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 -- ─────────────────────────────────────────
@@ -49,7 +53,7 @@ CREATE TABLE IF NOT EXISTS attendance (
     session_id      INT UNSIGNED    NOT NULL,
     student_id      INT UNSIGNED    NOT NULL,
     confirmed_at    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status          ENUM('present','late') NOT NULL DEFAULT 'present',
+    status          ENUM('present','late','absent') NOT NULL DEFAULT 'present',
     UNIQUE KEY uq_session_student (session_id, student_id),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES users(id)    ON DELETE CASCADE

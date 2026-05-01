@@ -28,6 +28,14 @@ def setup_database():
             statements = [s.strip() for s in schema.split(";") if s.strip()]
             for stmt in statements:
                 cur.execute(stmt)
+            
+            # Alter existing table if needed
+            cur.execute("ALTER TABLE users MODIFY COLUMN email VARCHAR(180) NULL")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS student_type ENUM('regular','irregular') DEFAULT 'regular'")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(20) NULL")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100) NULL")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT NULL")
+            cur.execute("ALTER TABLE attendance MODIFY COLUMN status ENUM('present','late','absent') NOT NULL DEFAULT 'present'")
         
         conn.commit()
         conn.close()

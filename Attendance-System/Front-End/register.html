@@ -51,8 +51,8 @@
         <input type="text" id="reg-name"/>
       </div>
       <div class="field">
-        <label>Email Address</label>
-        <input type="email" id="reg-email"/>
+        <label id="reg-identifier-label">Student ID</label>
+        <input type="text" id="reg-email" placeholder=""/>
       </div>
       <div class="field">
         <label>Password</label>
@@ -60,12 +60,15 @@
       </div>
       <div class="field-row" id="student-fields">
         <div class="field">
-          <label>Student ID</label>
-          <input type="text" id="reg-sid"/>
-        </div>
-        <div class="field">
           <label>Section</label>
           <input type="text" id="reg-section"/>
+        </div>
+        <div class="field">
+          <label>Student Type</label>
+          <select id="reg-student-type">
+            <option value="regular">Regular</option>
+            <option value="irregular">Irregular</option>
+          </select>
         </div>
       </div>
 
