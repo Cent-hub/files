@@ -8,7 +8,8 @@ Run:   pip install flask flask-cors pymysql bcrypt pyjwt
 import os
 import random
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
+from urllib.parse import urlparse, unquote_plus
 
 import bcrypt
 import jwt
@@ -34,6 +35,19 @@ if not SECRET_KEY:
     SECRET_KEY = "change-me-in-production-xyz987"
 TOKEN_EXP_HOURS = 8
 
+def parse_database_url(url: str) -> dict:
+    parsed = urlparse(url)
+    return {
+        "host": parsed.hostname,
+        "port": parsed.port or 3306,
+        "user": unquote_plus(parsed.username) if parsed.username else "",
+        "password": unquote_plus(parsed.password) if parsed.password else "",
+        "db": parsed.path.lstrip("/") if parsed.path else "",
+        "charset": "utf8mb4",
+        "cursorclass": pymysql.cursors.DictCursor,
+        "autocommit": True,
+    }
+
 DB_CONFIG = {
     "host":     os.environ.get("DB_HOST",     "localhost"),
     "port":     int(os.environ.get("DB_PORT", 3306)),
@@ -44,6 +58,10 @@ DB_CONFIG = {
     "cursorclass": pymysql.cursors.DictCursor,
     "autocommit": True,
 }
+
+database_url = os.environ.get("DATABASE_URL") or os.environ.get("JAWSDB_URL") or os.environ.get("JAWSDB_MARIA_URL")
+if database_url:
+    DB_CONFIG = parse_database_url(database_url)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,15 +118,18 @@ def gen_code(length=6) -> str:
 @app.post("/api/auth/login")
 def login():
     body = request.get_json(force=True)
-    email    = body.get("email", "").strip().lower()
+    identifier = body.get("email", "").strip()
     password = body.get("password", "")
 
-    if not email or not password:
-        return jsonify({"error": "Email and password required"}), 400
+    if not identifier or not password:
+        return jsonify({"error": "Identifier and password required"}), 400
 
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+        if '@' in identifier:
+            cur.execute("SELECT * FROM users WHERE email = %s", (identifier.lower(),))
+        else:
+            cur.execute("SELECT * FROM users WHERE student_id = %s", (identifier,))
         user = cur.fetchone()
     conn.close()
 
@@ -119,12 +140,16 @@ def login():
     return jsonify({
         "token": token,
         "user": {
-            "id":         user["id"],
-            "full_name":  user["full_name"],
-            "email":      user["email"],
-            "role":       user["role"],
-            "student_id": user["student_id"],
-            "section":    user["section"],
+            "id":             user["id"],
+            "full_name":      user["full_name"],
+            "email":          user["email"],
+            "role":           user["role"],
+            "student_id":     user["student_id"],
+            "section":        user["section"],
+            "student_type":   user["student_type"],
+            "gender":         user.get("gender"),
+            "department":     user.get("department"),
+            "profile_picture":user.get("profile_picture"),
         }
     })
 
@@ -133,37 +158,46 @@ def login():
 def register():
     body      = request.get_json(force=True)
     full_name  = body.get("full_name", "").strip()
-    email      = body.get("email", "").strip().lower()
+    identifier = body.get("email", "").strip()  # for students, this is student_id
     password   = body.get("password", "")
     role       = body.get("role", "student")
     student_id = body.get("student_id", "").strip() or None
     section    = body.get("section", "").strip() or None
+    student_type = body.get("student_type", "regular")
 
-    if not all([full_name, email, password]):
+    if not all([full_name, identifier, password]):
         return jsonify({"error": "All fields required"}), 400
     if role not in ("student", "teacher"):
         return jsonify({"error": "Invalid role"}), 400
+
+    if role == "student":
+        email = None
+        student_id = identifier
+    else:
+        email = identifier.lower()
+        student_id = student_id
 
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     conn = get_db()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (full_name, email, password, role, student_id, section) "
-                "VALUES (%s,%s,%s,%s,%s,%s)",
-                (full_name, email, hashed, role, student_id, section)
+                "INSERT INTO users (full_name, email, password, role, student_id, section, student_type) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (full_name, email, hashed, role, student_id, section, student_type)
             )
         new_id = conn.insert_id()
     except pymysql.IntegrityError:
         conn.close()
-        return jsonify({"error": "Email already registered"}), 409
+        return jsonify({"error": "Identifier already registered"}), 409
     conn.close()
 
     token = make_token(new_id, role)
     return jsonify({"token": token, "user": {
         "id": new_id, "full_name": full_name,
         "email": email, "role": role,
-        "student_id": student_id, "section": section,
+        "student_id": student_id, "section": section, "student_type": student_type,
+        "gender": None, "department": None, "profile_picture": None,
     }}), 201
 
 
@@ -315,6 +349,26 @@ def toggle_session(sid):
     return jsonify({"is_open": bool(new_state)})
 
 
+@app.delete("/api/sessions/<int:sid>")
+@auth_required(roles=["teacher"])
+def delete_session(sid):
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT teacher_id FROM sessions WHERE id = %s", (sid,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        if row["teacher_id"] != int(request.user["sub"]):
+            conn.close()
+            return jsonify({"error": "Forbidden"}), 403
+        cur.execute("DELETE FROM sessions WHERE id = %s", (sid,))
+    conn.close()
+    return jsonify({"message": "Session deleted"}), 200
+
+
 @app.patch("/api/sessions/<int:sid>/max")
 @auth_required(roles=["teacher"])
 def update_session(sid):
@@ -389,7 +443,7 @@ def session_attendance(sid):
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT u.full_name, u.student_id AS sid, u.section, "
+            "SELECT u.id AS uid, u.full_name, u.student_id AS sid, u.section, u.student_type, u.gender, u.department, u.profile_picture, "
             "a.confirmed_at, a.status "
             "FROM attendance a "
             "JOIN users u ON u.id = a.student_id "
@@ -406,6 +460,72 @@ def session_attendance(sid):
     for r in records:
         r["confirmed_at"] = str(r["confirmed_at"])
     return jsonify({"session": session, "records": records})
+
+
+@app.get("/api/users/<int:uid>")
+@auth_required(roles=["teacher"])
+def get_user_profile(uid):
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, full_name, student_id, section, student_type, gender, department, profile_picture "
+            "FROM users WHERE id = %s AND role = 'student'",
+            (uid,)
+        )
+        user = cur.fetchone()
+    conn.close()
+    if not user:
+        return jsonify({"error": "Student not found"}), 404
+    return jsonify({"user": user})
+
+
+@app.patch("/api/users/profile")
+@auth_required(roles=["student"])
+def update_my_profile():
+    body = request.get_json(force=True)
+    print("DEBUG: Received body:", body)
+    updates = {}
+    if "full_name" in body:
+        updates["full_name"] = body["full_name"].strip()
+    if "student_id" in body:
+        updates["student_id"] = body["student_id"].strip()
+    if "section" in body:
+        updates["section"] = body["section"].strip() or None
+    if "student_type" in body:
+        updates["student_type"] = body["student_type"].strip() or None
+    if "gender" in body:
+        updates["gender"] = body["gender"].strip() or None
+    if "department" in body:
+        updates["department"] = body["department"].strip() or None
+    if "profile_picture" in body:
+        updates["profile_picture"] = body["profile_picture"]
+
+    if not updates:
+        return jsonify({"error": "No profile fields to update"}), 400
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            if "student_id" in updates:
+                cur.execute("SELECT id FROM users WHERE student_id = %s AND id != %s", (updates["student_id"], int(request.user["sub"])))
+                if cur.fetchone():
+                    return jsonify({"error": "Student ID already in use"}), 409
+            set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+            values = list(updates.values()) + [int(request.user["sub"])]
+            cur.execute(f"UPDATE users SET {set_clause} WHERE id = %s", values)
+            cur.execute(
+                "SELECT id, full_name, student_id, section, student_type, gender, department, profile_picture "
+                "FROM users WHERE id = %s",
+                (int(request.user["sub"]),)
+            )
+            updated_user = cur.fetchone()
+    except pymysql.IntegrityError:
+        conn.close()
+        return jsonify({"error": "Failed to update profile"}), 500
+    conn.close()
+    if not updated_user:
+        return jsonify({"error": "Could not reload profile"}), 500
+    return jsonify({"message": "Profile updated", "user": updated_user})
 
 
 # ── Attendance Routes (Student) ──────────────────────────────────────────────
@@ -462,26 +582,66 @@ def confirm_attendance():
             conn.close()
             return jsonify({"error": "Already confirmed for this session"}), 409
 
-        # determine late (simple: after 15 min from start)
-        cur.execute("SELECT start_time FROM sessions WHERE id = %s", (session["id"],))
+        # determine status based on designated hours and grace period
+        cur.execute("SELECT session_date, start_time, end_time FROM sessions WHERE id = %s", (session["id"],))
         s = cur.fetchone()
-        start_str = str(s["start_time"])
-        # start_time comes as timedelta from pymysql
-        if isinstance(s["start_time"], timedelta):
-            total_sec = int(s["start_time"].total_seconds())
-            h, rem = divmod(total_sec, 3600)
-            m, _ = divmod(rem, 60)
+        
+        # Combine session_date with start_time and end_time
+        session_date = s["session_date"]
+        start_time = s["start_time"]
+        end_time = s["end_time"]
+        
+        # Parse time objects to extract hour and minute
+        # PyMySQL returns TIME columns as datetime.time objects
+        if hasattr(start_time, 'hour'):
+            start_h = start_time.hour
+            start_m = start_time.minute
+        elif isinstance(start_time, timedelta):
+            start_total_sec = int(start_time.total_seconds())
+            start_h, start_rem = divmod(start_total_sec, 3600)
+            start_m, _ = divmod(start_rem, 60)
         else:
-            h, m = map(int, start_str.split(":")[:2])
+            start_h, start_m = map(int, str(start_time).split(":")[:2])
+        
+        if hasattr(end_time, 'hour'):
+            end_h = end_time.hour
+            end_m = end_time.minute
+        elif isinstance(end_time, timedelta):
+            end_total_sec = int(end_time.total_seconds())
+            end_h, end_rem = divmod(end_total_sec, 3600)
+            end_m, _ = divmod(end_rem, 60)
+        else:
+            end_h, end_m = map(int, str(end_time).split(":")[:2])
+        
+        # Create datetime objects for comparison
+        end_datetime = datetime.combine(session_date, time(end_h, end_m))
+        late_cutoff = end_datetime + timedelta(minutes=30)
+        
+        now = datetime.now()
+        
+        if now <= end_datetime:
+            status = "present"
+        elif now <= late_cutoff:
+            status = "late"
+        else:
+            status = "absent"
 
-        now     = datetime.now()
-        cutoff  = now.replace(hour=h, minute=m, second=0) + timedelta(minutes=15)
-        status  = "late" if now > cutoff else "present"
-
-        cur.execute(
-            "INSERT INTO attendance (session_id, student_id, status) VALUES (%s,%s,%s)",
-            (session["id"], int(request.user["sub"]), status)
-        )
+        try:
+            cur.execute(
+                "INSERT INTO attendance (session_id, student_id, status) VALUES (%s,%s,%s)",
+                (session["id"], int(request.user["sub"]), status)
+            )
+        except pymysql.err.OperationalError as e:
+            if "Data truncated" in str(e) and status == "absent":
+                # Update the ENUM to include 'absent'
+                cur.execute("ALTER TABLE attendance MODIFY COLUMN status ENUM('present','late','absent') NOT NULL DEFAULT 'present'")
+                # Retry the insert
+                cur.execute(
+                    "INSERT INTO attendance (session_id, student_id, status) VALUES (%s,%s,%s)",
+                    (session["id"], int(request.user["sub"]), status)
+                )
+            else:
+                raise
     conn.close()
     return jsonify({
         "message": "Attendance confirmed!",
@@ -519,6 +679,21 @@ def health():
     return jsonify({"status": "ok", "time": str(datetime.now())})
 
 
+# ── Startup Schema Check ──────────────────────────────────────────────────────
+def ensure_schema():
+    """Ensure database schema supports all required columns and values."""
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            # Ensure attendance status ENUM includes 'absent'
+            cur.execute("ALTER TABLE attendance MODIFY COLUMN status ENUM('present','late','absent') NOT NULL DEFAULT 'present'")
+        conn.close()
+        print("✓ Database schema verified and updated if needed")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not verify schema: {e}")
+
+
 # ── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    ensure_schema()
     app.run(debug=True, port=5000)
